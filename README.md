@@ -8,7 +8,7 @@ The goal is to create an interactive, intelligent learning experience that evolv
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![Flask](https://img.shields.io/badge/Flask-Web_Framework-lightgrey?logo=flask)
-![SQLite](https://img.shields.io/badge/Database-SQLite-003B57?logo=sqlite)
+![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791?logo=postgresql&logoColor=white)
 ![SQLAlchemy](https://img.shields.io/badge/ORM-SQLAlchemy-red?logo=sqlalchemy)
 ![AI Powered](https://img.shields.io/badge/AI-Powered-brightgreen?logo=openai)
 ![WIP](https://img.shields.io/badge/Status-In_Development-orange?logo=github)
