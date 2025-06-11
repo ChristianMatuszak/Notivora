@@ -1,0 +1,406 @@
+from flask import Blueprint, request, jsonify
+from flask_login import login_required, current_user, logout_user
+from werkzeug.security import generate_password_hash
+from src.data.models.flashcards import Flashcard
+from src.data.models.notes import Note
+from src.data.models.users import User
+from src.data.db import SessionLocal
+from src.utils.email import send_reset_email
+from src.utils.token import generate_reset_token, verify_reset_token
+
+user_bp = Blueprint('user', __name__, url_prefix='/user')
+
+@user_bp.route("/create-user", methods=["POST"])
+def create_user():
+    """
+   Creates a new user with the provided username, email, and password.
+
+   Validates that username and email are unique before creation.
+   Returns the new user's ID on successful creation.
+
+   Args:
+       JSON body with "username" (str), "email" (str), and "password" (str).
+
+   Returns:
+       JSON with success message and user ID on HTTP 201.
+       400 Bad Request if required fields are missing or username/email already exists.
+       500 Internal Server Error on unexpected errors.
+   """
+
+    data = request.get_json()
+    session = SessionLocal()
+
+    username = data.get("username")
+    email = data.get("email")
+    password = data.get("password")
+
+    if not username or not email or not password:
+        return jsonify({"error": "Username, email, and password are required"}), 400
+
+    # username validation will be removed in the future (discriminator system)
+    if session.query(User).filter_by(username=username).first():
+        return jsonify({"error": "Username already exists"}), 400
+
+    if session.query(User).filter_by(email=email).first():
+        return jsonify({"error": "Email already exists"}), 400
+
+    hashed_password = generate_password_hash(password)
+
+    try:
+        new_user = User(username=username, email=email, password=hashed_password)
+        session.add(new_user)
+        session.commit()
+        return jsonify({"message": "User created successfully", "user_id": new_user.id}), 201
+    except Exception as error:
+        session.rollback()
+        return jsonify({"error": str(error)}), 500
+    finally:
+        session.close()
+
+@user_bp.route("/get-user/<int:user_id>", methods=["GET"])
+@login_required
+def get_user(user_id):
+    """
+    Retrieves the profile details of the specified user if authorized.
+
+    Only the user themselves can access their data.
+    Returns user info (id, username, email).
+
+    Args:
+        user_id (int): ID of the user to retrieve.
+
+    Returns:
+        JSON object with user data and HTTP 200 on success.
+        403 Forbidden if accessing another user's data.
+        404 Not Found if user doesn't exist.
+        500 Internal Server Error on unexpected errors.
+    """
+
+
+    session = SessionLocal()
+
+    user = session.query(User).filter_by(id=user_id).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.id != current_user.id:
+        return jsonify({"error": "Unauthorized access"}), 403
+
+    try:
+        user_data = {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        }
+        return jsonify(user_data), 200
+
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+
+    finally:
+        session.close()
+
+@user_bp.route("/update-user/<int:user_id>", methods=["PUT"])
+@login_required
+def update_user(user_id):
+    """
+    Updates username and/or email of the authenticated user.
+
+    Validates uniqueness of new username and email if provided.
+
+    Args:
+        user_id (int): ID of the user to update.
+        JSON body may contain "username" (str) and/or "email" (str).
+
+    Returns:
+        JSON success message on HTTP 200.
+        400 Bad Request if username/email already exist or invalid input.
+        403 Forbidden if user tries to update another user's data.
+        404 Not Found if user doesn't exist.
+        500 Internal Server Error on unexpected errors.
+    """
+
+    session = SessionLocal()
+    data = request.get_json()
+
+    user = session.query(User).filter_by(id=user_id).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.id != current_user.id:
+        return jsonify({"error": "Unauthorized access"}), 403
+
+    username = data.get("username")
+    email = data.get("email")
+
+    if username:
+        if session.query(User).filter(User.username == username, User.id != user.id).first():
+            return jsonify({"error": "Username already exists"}), 400
+
+        user.username = username
+    if email:
+        if session.query(User).filter(User.email == email, User.id != user.id).first():
+            return jsonify({"error": "Email already exists"}), 400
+        user.email = email
+
+    try:
+        session.commit()
+        return jsonify({"message": "User updated successfully"}), 200
+    except Exception as error:
+        session.rollback()
+        return jsonify({"error": str(error)}), 500
+    finally:
+        session.close()
+
+@user_bp.route("/delete-user/<int:user_id>", methods=["DELETE"])
+@login_required
+def delete_user(user_id):
+    """
+    Deletes the authenticated user's account along with associated notes and flashcards.
+
+    Logs out the user after successful deletion.
+
+    Args:
+        user_id (int): ID of the user to delete.
+
+    Returns:
+        JSON success message on HTTP 200.
+        403 Forbidden if trying to delete another user's account.
+        404 Not Found if user doesn't exist.
+        500 Internal Server Error on unexpected errors.
+    """
+
+    session = SessionLocal()
+
+    user = session.query(User).filter_by(id=user_id).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.id != current_user.id:
+        return jsonify({"error": "Unauthorized access"}), 403
+
+    try:
+        logout_user()
+        session.query(Note).filter_by(user_id=user.id).delete()
+        session.query(Flashcard).filter_by(user_id=user.id).delete()
+        session.delete(user)
+        session.commit()
+        return jsonify({"message": "User deleted successfully"}), 200
+    except Exception as error:
+        session.rollback()
+        return jsonify({"error": str(error)}), 500
+    finally:
+        session.close()
+
+@user_bp.route("/logout", methods=["POST"])
+@login_required
+def logout():
+    """
+    Logs out the currently authenticated user.
+
+    Returns:
+        JSON success message on HTTP 200.
+    """
+
+    logout_user()
+    return jsonify({"message": "Logged out successfully"}), 200
+
+@user_bp.route("/list-users", methods=["GET"])
+@login_required
+def list_users():
+    """
+    Lists all users; accessible only to admins.
+
+    Returns a list of users with their ID, username, and email.
+
+    Returns:
+        JSON array of users on HTTP 200.
+        403 Forbidden if current user is not admin.
+        500 Internal Server Error on unexpected errors.
+    """
+
+    session = SessionLocal()
+
+    try:
+        if not current_user.is_admin:
+            return jsonify({"error": "Unauthorized access"}), 403
+        users = session.query(User).all()
+        user_list = [{"id": user.id, "username": user.username, "email": user.email} for user in users]
+        return jsonify(user_list), 200
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+    finally:
+        session.close()
+
+@user_bp.route("/fetch-flashcards/<int:user_id>", methods=["GET"])
+@login_required
+def fetch_flashcards(user_id):
+    """
+    Retrieves all flashcards belonging to the authenticated user.
+
+    Args:
+        user_id (int): ID of the user whose flashcards to retrieve.
+
+    Returns:
+        JSON list of flashcards (id, question, answer) on HTTP 200.
+        403 Forbidden if user requests flashcards of another user.
+        404 Not Found if user doesn't exist.
+        500 Internal Server Error on unexpected errors.
+    """
+
+    session = SessionLocal()
+
+    user = session.query(User).filter_by(id=user_id).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.id != current_user.id:
+        return jsonify({"error": "Unauthorized access"}), 403
+
+    try:
+        flashcards = session.query(Flashcard).filter_by(user_id=user.id).all()
+        flashcard_list = [{"id": fc.id, "question": fc.question, "answer": fc.answer} for fc in flashcards]
+        return jsonify(flashcard_list), 200
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+    finally:
+        session.close()
+
+@user_bp.route("/change-password/<int:user_id>", methods=["POST"])
+@login_required
+def change_password(user_id):
+    """
+    Changes the password for the authenticated user after verifying current password.
+
+    Args:
+        user_id (int): ID of the user changing the password.
+        JSON body containing "current_password" and "new_password".
+
+    Returns:
+        JSON success message on HTTP 200.
+        400 Bad Request if passwords are missing or current password is incorrect.
+        403 Forbidden if user tries to change another user's password.
+        404 Not Found if user doesn't exist.
+        500 Internal Server Error on unexpected errors.
+    """
+
+    session = SessionLocal()
+    data = request.get_json()
+
+    user = session.query(User).filter_by(id=user_id).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.id != current_user.id:
+        return jsonify({"error": "Unauthorized access"}), 403
+
+    new_password = data.get("new_password")
+    current_password = data.get("current_password")
+
+    if not current_password or not new_password:
+        return jsonify({"error": "Current and new passwords are required"}), 400
+
+    if not user.check_password(current_password):
+        return jsonify({"error": "Current password is incorrect"}), 400
+
+    try:
+        user.set_password(new_password)
+        session.commit()
+        return jsonify({"message": "Password changed successfully"}), 200
+    except Exception as error:
+        session.rollback()
+        return jsonify({"error": str(error)}), 500
+    finally:
+        session.close()
+
+
+@user_bp.route("/request-password-reset", methods=["POST"])
+def request_password_reset():
+    """
+    Initiates a password reset request by sending an email with a reset link.
+
+    The link contains a token that allows the user to reset their password.
+
+    Args:
+        JSON body containing "email" of the user requesting password reset.
+
+    Returns:
+        JSON success message on HTTP 200.
+        400 Bad Request if email is missing.
+        404 Not Found if user with given email doesn't exist.
+    """
+
+    data = request.get_json()
+    session = SessionLocal()
+
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    user = session.query(User).filter_by(email=email).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    token = generate_reset_token(user.id)
+    reset_url = f"https://in-development.com/reset-password?token={token}"
+    send_reset_email(user.email, reset_url)
+
+    return jsonify({"message": "Password reset request received. Instructions will be sent to your email."}), 200
+
+@user_bp.route("/password-reset", methods=["POST"])
+def password_reset():
+    """
+    Resets a user's password given a valid reset token and new password.
+
+    Validates the token, checks that new passwords match, and updates the password.
+
+    Args:
+        JSON body containing:
+            - "token": password reset token
+            - "new_password": new password string
+            - "confirm_password": password confirmation string
+
+    Returns:
+        JSON success message on HTTP 200.
+        400 Bad Request if token or passwords are missing, or passwords don't match, or token is invalid/expired.
+        404 Not Found if user doesn't exist.
+        500 Internal Server Error on unexpected errors.
+    """
+
+    data = request.get_json()
+    session = SessionLocal()
+
+    token = data.get("token")
+    new_password = data.get("new_password")
+    confirm_password = data.get("confirm_password")
+
+    if not token or not new_password or not confirm_password:
+        return jsonify({"error": "Token and both password fields are required"}), 400
+
+    if new_password != confirm_password:
+        return jsonify({"error": "Passwords do not match"}), 400
+
+    user_id = verify_reset_token(token)
+    if not user_id:
+        return jsonify({"error": "Invalid or expired token"}), 400
+
+    user = session.query(User).filter_by(id=user_id).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    try:
+        user.set_password(new_password)
+        session.commit()
+        return jsonify({"message": "Password has been reset successfully"}), 200
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()

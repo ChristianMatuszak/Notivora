@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, String
 from datetime import datetime, UTC
 
 from sqlalchemy.orm import relationship
@@ -19,6 +19,7 @@ class Note(Base):
     __tablename__ = "notes"
 
     note_id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=True)
     original = Column(Text, nullable=False)
     ai_summary = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now(UTC), nullable=False)
