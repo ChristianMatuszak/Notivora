@@ -1,7 +1,6 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 from src.data.models.notes import Note
-from src.data.db import SessionLocal
 
 note_bp = Blueprint('note', __name__, url_prefix='/note')
 
@@ -24,7 +23,7 @@ def store_note():
         500 Internal Server Error if any database operation fails.
     """
     data = request.get_json()
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
 
     title = data.get('title')
     content = data.get('content')
@@ -71,7 +70,7 @@ def get_note(note_id):
         500 Internal Server Error if any unexpected error occurs during processing.
     """
 
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
 
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
@@ -102,7 +101,7 @@ def get_notes():
         500 Internal Server Error if an unexpected error occurs during database interaction.
     """
 
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
     try:
         notes = session.query(Note).filter(Note.user_id == current_user.id).all()
         result = []
@@ -138,7 +137,7 @@ def update_note(note_id):
         500 Internal Server Error if the update operation fails.
     """
 
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
     data = request.get_json()
 
     title = data.get('title')
@@ -183,7 +182,7 @@ def delete_note(note_id):
         500 Internal Server Error if deletion fails due to database errors.
     """
 
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:

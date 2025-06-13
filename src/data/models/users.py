@@ -40,9 +40,7 @@ class User(Base):
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
-    flashcards = relationship("Flashcard", back_populates="user", cascade="all, delete-orphan")
     quizzes = relationship("Quiz", back_populates="user", cascade="all, delete-orphan")
-    scores = relationship("Score", back_populates="user", cascade="all, delete-orphan")
 
     def set_password(self, password: str):
         """Hashes and sets the user's password."""
@@ -72,7 +70,20 @@ class User(Base):
         except EmailNotValidError as error:
             raise ValueError(f"Invalid email address: {error}")
 
+    @property
+    def is_active(self):
+        return True
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    def get_id(self):
+        return str(self.id)
+
     def __repr__(self):
         return f"<User(username={self.username}, email={self.email})>"
-
-

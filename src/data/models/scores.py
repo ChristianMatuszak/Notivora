@@ -27,7 +27,7 @@ class Score(Base):
 
     flashcard = relationship("Flashcard", back_populates="scores")
     quiz = relationship("Quiz", back_populates="scores")
-    user = relationship("User", back_populates="scores")
+
 
     def __repr__(self):
         return (f"<Score(score_id={self.score_id}, card_id={self.card_id}, "

@@ -1,10 +1,9 @@
-from flask import Blueprint, request, jsonify
-from flask_login import login_required, current_user, logout_user
+from flask import Blueprint, request, jsonify, current_app
+from flask_login import login_required, current_user, logout_user, login_user
 from werkzeug.security import generate_password_hash
 from src.data.models.flashcards import Flashcard
 from src.data.models.notes import Note
 from src.data.models.users import User
-from src.data.db import SessionLocal
 from src.utils.email import send_reset_email
 from src.utils.token import generate_reset_token, verify_reset_token
 
@@ -13,22 +12,25 @@ user_bp = Blueprint('user', __name__, url_prefix='/user')
 @user_bp.route("/create-user", methods=["POST"])
 def create_user():
     """
-   Creates a new user with the provided username, email, and password.
+    Create a new user account.
 
-   Validates that username and email are unique before creation.
-   Returns the new user's ID on successful creation.
+    Accepts a JSON payload with `username`, `email`, and `password`. Ensures both
+    username and email are unique before creating a new user record.
 
-   Args:
-       JSON body with "username" (str), "email" (str), and "password" (str).
+    Request JSON:
+        {
+            "username": "string",
+            "email": "string",
+            "password": "string"
+        }
 
-   Returns:
-       JSON with success message and user ID on HTTP 201.
-       400 Bad Request if required fields are missing or username/email already exists.
-       500 Internal Server Error on unexpected errors.
-   """
-
+    Returns:
+        201 Created: On successful creation. Includes user ID.
+        400 Bad Request: If required fields are missing or already exist.
+        500 Internal Server Error: If an unexpected error occurs.
+    """
     data = request.get_json()
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
 
     username = data.get("username")
     email = data.get("email")
@@ -37,17 +39,15 @@ def create_user():
     if not username or not email or not password:
         return jsonify({"error": "Username, email, and password are required"}), 400
 
-    # username validation will be removed in the future (discriminator system)
     if session.query(User).filter_by(username=username).first():
         return jsonify({"error": "Username already exists"}), 400
 
     if session.query(User).filter_by(email=email).first():
         return jsonify({"error": "Email already exists"}), 400
 
-    hashed_password = generate_password_hash(password)
-
     try:
-        new_user = User(username=username, email=email, password=hashed_password)
+        new_user = User(username=username, email=email)
+        new_user.set_password(password)
         session.add(new_user)
         session.commit()
         return jsonify({"message": "User created successfully", "user_id": new_user.id}), 201
@@ -56,6 +56,7 @@ def create_user():
         return jsonify({"error": str(error)}), 500
     finally:
         session.close()
+
 
 @user_bp.route("/get-user/<int:user_id>", methods=["GET"])
 @login_required
@@ -75,10 +76,7 @@ def get_user(user_id):
         404 Not Found if user doesn't exist.
         500 Internal Server Error on unexpected errors.
     """
-
-
-    session = SessionLocal()
-
+    session = current_app.config['SESSION_LOCAL']()
     user = session.query(User).filter_by(id=user_id).first()
 
     if not user:
@@ -88,16 +86,10 @@ def get_user(user_id):
         return jsonify({"error": "Unauthorized access"}), 403
 
     try:
-        user_data = {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email
-        }
+        user_data = {"id": user.id, "username": user.username, "email": user.email}
         return jsonify(user_data), 200
-
     except Exception as error:
         return jsonify({"error": str(error)}), 500
-
     finally:
         session.close()
 
@@ -120,10 +112,8 @@ def update_user(user_id):
         404 Not Found if user doesn't exist.
         500 Internal Server Error on unexpected errors.
     """
-
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
     data = request.get_json()
-
     user = session.query(User).filter_by(id=user_id).first()
 
     if not user:
@@ -138,8 +128,8 @@ def update_user(user_id):
     if username:
         if session.query(User).filter(User.username == username, User.id != user.id).first():
             return jsonify({"error": "Username already exists"}), 400
-
         user.username = username
+
     if email:
         if session.query(User).filter(User.email == email, User.id != user.id).first():
             return jsonify({"error": "Email already exists"}), 400
@@ -171,9 +161,7 @@ def delete_user(user_id):
         404 Not Found if user doesn't exist.
         500 Internal Server Error on unexpected errors.
     """
-
-    session = SessionLocal()
-
+    session = current_app.config['SESSION_LOCAL']()
     user = session.query(User).filter_by(id=user_id).first()
 
     if not user:
@@ -204,7 +192,6 @@ def logout():
     Returns:
         JSON success message on HTTP 200.
     """
-
     logout_user()
     return jsonify({"message": "Logged out successfully"}), 200
 
@@ -212,18 +199,17 @@ def logout():
 @login_required
 def list_users():
     """
-    Lists all users; accessible only to admins.
+    List all registered users (admin-only).
 
-    Returns a list of users with their ID, username, and email.
+    Only accessible by authenticated users with `is_admin = True`. Returns
+    a list of users including their ID, username, and email.
 
     Returns:
-        JSON array of users on HTTP 200.
-        403 Forbidden if current user is not admin.
-        500 Internal Server Error on unexpected errors.
+        200 OK: List of user objects.
+        403 Forbidden: If the authenticated user is not an admin.
+        500 Internal Server Error: On unexpected failure.
     """
-
-    session = SessionLocal()
-
+    session = current_app.config['SESSION_LOCAL']()
     try:
         if not current_user.is_admin:
             return jsonify({"error": "Unauthorized access"}), 403
@@ -250,9 +236,7 @@ def fetch_flashcards(user_id):
         404 Not Found if user doesn't exist.
         500 Internal Server Error on unexpected errors.
     """
-
-    session = SessionLocal()
-
+    session = current_app.config['SESSION_LOCAL']()
     user = session.query(User).filter_by(id=user_id).first()
 
     if not user:
@@ -287,10 +271,8 @@ def change_password(user_id):
         404 Not Found if user doesn't exist.
         500 Internal Server Error on unexpected errors.
     """
-
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
     data = request.get_json()
-
     user = session.query(User).filter_by(id=user_id).first()
 
     if not user:
@@ -318,33 +300,27 @@ def change_password(user_id):
     finally:
         session.close()
 
-
 @user_bp.route("/request-password-reset", methods=["POST"])
 def request_password_reset():
     """
-    Initiates a password reset request by sending an email with a reset link.
-
-    The link contains a token that allows the user to reset their password.
+    Initiates a password reset request by sending an email with a reset token link.
 
     Args:
-        JSON body containing "email" of the user requesting password reset.
+        JSON body containing "email".
 
     Returns:
         JSON success message on HTTP 200.
         400 Bad Request if email is missing.
-        404 Not Found if user with given email doesn't exist.
+        404 Not Found if no user matches the email.
     """
-
     data = request.get_json()
-    session = SessionLocal()
-
+    session = current_app.config['SESSION_LOCAL']()
     email = data.get("email")
 
     if not email:
         return jsonify({"error": "Email is required"}), 400
 
     user = session.query(User).filter_by(email=email).first()
-
     if not user:
         return jsonify({"error": "User not found"}), 404
 
@@ -357,26 +333,25 @@ def request_password_reset():
 @user_bp.route("/password-reset", methods=["POST"])
 def password_reset():
     """
-    Resets a user's password given a valid reset token and new password.
+    Reset a user's password using a reset token.
 
-    Validates the token, checks that new passwords match, and updates the password.
+    Accepts a token (usually sent via email) along with a new password and confirmation.
 
-    Args:
-        JSON body containing:
-            - "token": password reset token
-            - "new_password": new password string
-            - "confirm_password": password confirmation string
+    Request JSON:
+        {
+            "token": "string",
+            "new_password": "string",
+            "confirm_password": "string"
+        }
 
     Returns:
-        JSON success message on HTTP 200.
-        400 Bad Request if token or passwords are missing, or passwords don't match, or token is invalid/expired.
-        404 Not Found if user doesn't exist.
-        500 Internal Server Error on unexpected errors.
+        200 OK: If the password was reset successfully.
+        400 Bad Request: If fields are missing, passwords do not match, or token is invalid.
+        404 Not Found: If the user linked to the token does not exist.
+        500 Internal Server Error: If an unexpected error occurs.
     """
-
     data = request.get_json()
-    session = SessionLocal()
-
+    session = current_app.config['SESSION_LOCAL']()
     token = data.get("token")
     new_password = data.get("new_password")
     confirm_password = data.get("confirm_password")
@@ -404,3 +379,33 @@ def password_reset():
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
+
+@user_bp.route("/login", methods=["POST"])
+def login():
+    """
+    Authenticates a user and creates a session.
+
+    Expects JSON body with "username" and "password".
+    Verifies credentials and logs in the user if valid.
+
+    Returns:
+        200 OK with user ID and success message on successful login.
+        400 Bad Request if username or password is missing.
+        401 Unauthorized if credentials are invalid.
+    """
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "Username and password required"}), 400
+
+    session = current_app.config['SESSION_LOCAL']()
+    user = session.query(User).filter_by(username=username).first()
+    session.close()
+
+    if user is None or not user.verify_password(password):
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    login_user(user)
+    return jsonify({"message": "Login successful", "user_id": user.id}), 200

@@ -15,6 +15,7 @@ class Note(Base):
         ai_summary (str): AI-generated summary of the original content.
         created_at (datetime): Timestamp indicating when the note was created.
         user_id (int): Foreign key referencing the associated user.
+        language (str): Language of the note content, default is "en".
     """
     __tablename__ = "notes"
 
@@ -23,6 +24,7 @@ class Note(Base):
     original = Column(Text, nullable=False)
     ai_summary = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now(UTC), nullable=False)
+    language = Column(String, nullable=True, default="en")
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     user = relationship("User", back_populates="notes")
