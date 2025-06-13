@@ -1,8 +1,7 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 from src.data.models.notes import Note
 from src.data.models.flashcards import Flashcard
-from src.data.db import SessionLocal
 from src.utils.llm_api import generate_flashcards_from_summary, generate_summary_from_note, \
     check_user_answer_with_llm
 
@@ -29,7 +28,7 @@ def generate_flashcard(note_id):
         or if there is no AI summary available.
         500 Internal Server Error if flashcard generation or database operations fail.
     """
-    session = SessionLocal()
+    session = current_app.config['SESSION_LOCAL']()
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:
@@ -39,7 +38,7 @@ def generate_flashcard(note_id):
             return jsonify({"error": "No summary available for this note"}), 404
 
         existing_cards = session.query(Flashcard).filter(Flashcard.note_id == note_id).all()
-        flashcards_data = generate_flashcards_from_summary(note.ai_summary)
+        flashcards_data = generate_flashcards_from_summary(note.ai_summary, note.language)
 
         for card in existing_cards:
             session.delete(card)
@@ -52,7 +51,7 @@ def generate_flashcard(note_id):
                 note_id=note_id,
                 learned=False,
                 last_studied=None,
-                time_reviewed=0
+                times_reviewed=0
             )
             session.add(flashcard)
 
@@ -88,7 +87,8 @@ def generate_summary(note_id):
         400 Bad Request if the original content is missing.
         500 Internal Server Error if summary generation or database operations fail.
     """
-    session = SessionLocal()
+
+    session = current_app.config['SESSION_LOCAL']()
     try:
 
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
@@ -99,9 +99,10 @@ def generate_summary(note_id):
             return jsonify({"error": "Original note content is empty"}), 400
 
 
-        summary = generate_summary_from_note(note.original)
+        summary, language = generate_summary_from_note(note.original)
 
         note.ai_summary = summary
+        note.language = language
         session.commit()
 
         return jsonify({"ai_summary": summary}), 200
@@ -131,6 +132,7 @@ def check_answer():
         400 Bad Request if any required fields are missing.
         500 Internal Server Error if answer evaluation or LLM interaction fails.
     """
+
     data = request.get_json()
     question = data.get('question')
     correct_answer = data.get('correct_answer')
@@ -140,7 +142,11 @@ def check_answer():
         return jsonify({"error": "Missing question, correct_answer or user_answer"}), 400
 
     try:
-        result = check_user_answer_with_llm(question, correct_answer, user_answer)
+        language = data.get('language')
+        if not language:
+            return jsonify({"error": "Missing language"}), 400
+
+        result = check_user_answer_with_llm(question, correct_answer, user_answer, language)
 
         return jsonify(result), 200
 

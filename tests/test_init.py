@@ -5,7 +5,7 @@ import time
 from src.app import create_app
 
 @pytest.fixture
-def app():
+def app(tmp_path):
     """
     Creates and returns a Flask application instance for testing.
 
@@ -16,7 +16,10 @@ def app():
     Returns:
         flask.Flask: The Flask application instance.
     """
-    app = create_app()
+    test_db_path = tmp_path / "test.sqlite"
+    db_url = f"sqlite:///{test_db_path}"
+
+    app = create_app(database_url=db_url)
     return app
 
 @pytest.fixture
@@ -128,7 +131,7 @@ def test_log_file_creation(monkeypatch, test_log_file):
 
     time.sleep(0.1)
 
-    assert os.path.exists(test_log_file), "Log file wurde nicht erstellt"
+    assert os.path.exists(test_log_file), "Log file was not created"
 
     with open(test_log_file, "r") as f:
         content = f.read()
