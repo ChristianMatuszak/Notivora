@@ -1,4 +1,5 @@
 import pytest
+
 from src.app import create_app
 from src.data.db import Base, get_engine
 from src.data.models.notes import Note

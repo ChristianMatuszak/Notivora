@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
+
 from src.data.models.notes import Note
 from src.data.models.flashcards import Flashcard
 from src.utils.llm_api import generate_flashcards_from_summary, generate_summary_from_note, \

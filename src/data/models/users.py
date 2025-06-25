@@ -1,10 +1,12 @@
 import datetime
+
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from email_validator import validate_email, EmailNotValidError
+from passlib.context import CryptContext
 from sqlalchemy.orm import relationship
 
 from src.data.db import Base
-from passlib.context import CryptContext
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
