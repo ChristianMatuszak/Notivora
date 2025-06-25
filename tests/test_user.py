@@ -3,6 +3,7 @@ import json
 
 from flask import current_app
 
+from src.utils.constants import ErrorMessages
 from src.app import create_app
 from src.data.db import Base, get_engine, init_db
 from src.data.models.users import User
@@ -117,7 +118,7 @@ def test_create_user_duplicate_username(test_client, new_user):
     )
     assert response.status_code == 400
     data = response.get_json()
-    assert "Username already exists" in data["error"]
+    assert ErrorMessages.USER_ALREADY_EXISTS in data["error"]
 
 def test_create_user_duplicate_email(test_client, new_user):
     """

@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 
 from src.data.models.notes import Note
 from src.data.models.flashcards import Flashcard
+from src.utils.constants import HttpStatus, ErrorMessages
 from src.utils.llm_api import generate_flashcards_from_summary, generate_summary_from_note, \
     check_user_answer_with_llm
 
@@ -33,10 +34,10 @@ def generate_flashcard(note_id):
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:
-            return jsonify({"error": "Note not found"}), 404
+            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
         if not note.ai_summary:
-            return jsonify({"error": "No summary available for this note"}), 404
+            return jsonify({"error": ErrorMessages.NO_SUMMARY_AVAILABLE}), HttpStatus.NOT_FOUND
 
         existing_cards = session.query(Flashcard).filter(Flashcard.note_id == note_id).all()
         flashcards_data = generate_flashcards_from_summary(note.ai_summary, note.language)
@@ -58,11 +59,11 @@ def generate_flashcard(note_id):
 
         session.commit()
 
-        return jsonify({"message": "Flashcards generated successfully"}), 201
+        return jsonify({"message": "Flashcards generated successfully"}), HttpStatus.CREATED
 
     except Exception as error:
         session.rollback()
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
 
     finally:
         session.close()
@@ -94,10 +95,10 @@ def generate_summary(note_id):
 
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:
-            return jsonify({"error": "Note not found"}), 404
+            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
         if not note.original:
-            return jsonify({"error": "Original note content is empty"}), 400
+            return jsonify({"error": ErrorMessages.EMPTY_NOTE_CONTENT}), HttpStatus.BAD_REQUEST
 
 
         summary, language = generate_summary_from_note(note.original)
@@ -106,11 +107,11 @@ def generate_summary(note_id):
         note.language = language
         session.commit()
 
-        return jsonify({"ai_summary": summary}), 200
+        return jsonify({"ai_summary": summary}), HttpStatus.OK
 
     except Exception as error:
         session.rollback()
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
 
     finally:
         session.close()
@@ -140,16 +141,16 @@ def check_answer():
     user_answer = data.get('user_answer')
 
     if not all([question, correct_answer, user_answer]):
-        return jsonify({"error": "Missing question, correct_answer or user_answer"}), 400
+        return jsonify({"error": ErrorMessages.MISSING_ANSWER_FIELD}), HttpStatus.BAD_REQUEST
 
     try:
         language = data.get('language')
         if not language:
-            return jsonify({"error": "Missing language"}), 400
+            return jsonify({"error": ErrorMessages.MISSING_LANGUAGE}), HttpStatus.BAD_REQUEST
 
         result = check_user_answer_with_llm(question, correct_answer, user_answer, language)
 
-        return jsonify(result), 200
+        return jsonify(result), HttpStatus.OK
 
     except Exception as error:
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR

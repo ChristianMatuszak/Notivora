@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 
+from src.utils.constants import HttpStatus, ErrorMessages
 from src.data.models.notes import Note
 
 note_bp = Blueprint('note', __name__, url_prefix='/note')
@@ -30,7 +31,7 @@ def store_note():
     content = data.get('content')
 
     if not title or not content:
-        return jsonify({"error": "Title and content are required"}), 400
+        return jsonify({"error": ErrorMessages.TITLE_CONTENT_REQUIRED}), HttpStatus.BAD_REQUEST
 
     note = Note(
         title=title,
@@ -41,11 +42,11 @@ def store_note():
     try:
         session.add(note)
         session.commit()
-        return jsonify({'message': 'Note created', 'note_id': note.note_id}), 201
+        return jsonify({'message': 'Note created', 'note_id': note.note_id}), HttpStatus.CREATED
 
     except Exception as error:
         session.rollback()
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
 
     finally:
         session.close()
@@ -76,12 +77,12 @@ def get_note(note_id):
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:
-            return jsonify({"error": "Note not found"}), 404
+            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
         return jsonify({"ai_summary": note.ai_summary, })
 
     except Exception as error:
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
     finally:
         session.close()
 
@@ -111,9 +112,9 @@ def get_notes():
                 "note_id": note.note_id,
                 "title": note.title,
             })
-        return jsonify(result), 200
+        return jsonify(result), HttpStatus.OK
     except Exception as error:
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
     finally:
         session.close()
 
@@ -147,7 +148,7 @@ def update_note(note_id):
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:
-            return jsonify({"error": "Note not found"}), 404
+            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
         if title:
             note.title = title
@@ -155,11 +156,11 @@ def update_note(note_id):
             note.original = content
 
         session.commit()
-        return jsonify({"message": "Note updated successfully"}), 200
+        return jsonify({"message": "Note updated successfully"}), HttpStatus.OK
 
     except Exception as error:
         session.rollback()
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
     finally:
         session.close()
 
@@ -187,15 +188,15 @@ def delete_note(note_id):
     try:
         note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
         if not note:
-            return jsonify({"error": "Note not found"}), 404
+            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
         session.delete(note)
         session.commit()
-        return jsonify({"message": "Note deleted successfully"}), 200
+        return jsonify({"message": "Note deleted successfully"}), HttpStatus.OK
 
     except Exception as error:
         session.rollback()
-        return jsonify({"error": str(error)}), 500
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
     finally:
         session.close()
 
