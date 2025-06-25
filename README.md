@@ -35,50 +35,157 @@ The goal is to create an interactive, intelligent learning experience that evolv
 
 ---
 
-## ⚙️ Installation Guide
+## 1. Prerequisites
+- Python 3.10 or higher
+- pip (Python Package Manager)
+- SQLite or PostgreSQL
+- OpenAI API Key
 
-### 1. Clone the repository
 
-```bash
-git clone https://github.com/ChristianMatuszak/Notivora.git
-cd Notivora
-```
+## 2. Installation Guide ⚙️
+   
+ ### 1. Clone the repository
+ ```bash
+ git clone https://github.com/ChristianMatuszak/Notivora.git
+ cd Notivora
+ ```
+ 
+ ### 2. Create virtual environment
+ ```bash
+ python -m venv venv
+ source venv/bin/activate  # Linux/Mac
+ # or
+ venv\Scripts\activate     # Windows
+ ```
+ 
+ ### 3. Install dependencies
+ ```bash
+ pip install -r requirements.txt
+ ```
 
-### 2. Install dependencies
+ ### 4. Configure environment variables
+  
+  🔐 Environment Configuration
+  
+  To run the project, create a `.env` file in the root directory based on the provided `.env.template`.
+  
+  Here's a description of the required environment variables:
+  
+  ```env
+  # OpenAI API Key for Access to OpenAI Systems
+  OPENAI_API_KEY=your_openai_api_key_here
+  
+  # OpenAI API Base URL (Default: https://api.openai.com/v1)
+  OPENAI_API_BASE=https://api.openai.com/v1
+  
+  # Secret Key for Flask Sessions
+  SECRET_KEY=your_secret_key_here
+  
+  # Database URL (example: sqlite:///./app.sqlite)
+  DATABASE_URL=your_database_url_here
+  ```
+  
+  ```bash
+  cp .env.template .env
+  ```
+  
+  Edit `.env` and add your OpenAI API keys and other required environment variables.
 
-```bash
-pip install -r requirements.txt
-```
+---
 
-### 3. Configure environment variables
+## 3. **API Documentation**
+   
+   ### User Management
+   - `POST /user/create-user` - Create new user account
+   - `POST /user/login` - Authenticate user
+   - `GET /user/get-user/<id>` - Get user details
+   - `PUT /user/update-user/<id>` - Update user information
+   - `DELETE /user/delete-user/<id>` - Delete user account
+   
+   ### Notes Management
+   - `POST /note/store-note` - Create new note
+   - `GET /note/get-notes` - Get all user notes
+   - `GET /note/get-note/<id>` - Get specific note
+   - `PUT /note/update-note/<id>` - Update note
+   - `DELETE /note/delete-note/<id>` - Delete note
+   
+   ### AI Features
+   - `POST /llm/generate-summary/<note_id>` - Generate AI summary
+   - `POST /llm/generate-flashcard/<note_id>` - Create flashcards
+   - `POST /llm/check-answer` - Evaluate quiz answers
 
-🔐 Environment Configuration
+--- 
 
-To run the project, create a `.env` file in the root directory based on the provided `.env.template`.
+## 4. Project Structure
 
-Here's a description of the required environment variables:
+   ```
+  src/
+  ├── app/
+  │   ├── __init__.py              # Flask App Factory
+  │   ├── main.py                  # Main entry point
+  │   └── routes/                  # API routes
+  │       ├── user.py              # User management endpoints
+  │       ├── note.py              # Note management endpoints
+  │       ├── llm.py               # AI/LLM integration endpoints
+  │       └── ping.py              # Health check endpoint
+  ├── data/
+  │   ├── db.py                    # Database connection setup
+  │   └── models/                  # SQLAlchemy models
+  │       ├── users.py             # User model
+  │       ├── notes.py             # Note model
+  │       ├── flashcards.py        # Flashcard model
+  │       ├── quizzes.py           # Quiz model
+  │       └── scores.py            # Score model
+  ├── utils/                       # Utility functions
+  |   ├── constants.py             # Centralized error and status messages
+  │   ├── llm_api.py               # OpenAI API integration
+  │   ├── email.py                 # Email functionality
+  │   └── token.py                 # Token management
+  └── tests/                       # Test files
+  ```
 
-```env
-# OpenAI API Key for Access to OpenAI Systems
-OPENAI_API_KEY=your_openai_api_key_here
+---
 
-# OpenAI API Base URL (Default: https://api.openai.com/v1)
-OPENAI_API_BASE=https://api.openai.com/v1
+## 5. Troubleshooting
 
-# Secret Key for Flask Sessions
-SECRET_KEY=your_secret_key_here
+   ### OpenAI API Errors
+   - Ensure your API key is valid and has sufficient credits
+   - Check if the API base URL is correct
+   - Verify your OpenAI account status
+   
+   ### Database Errors
+   - Delete the database file and restart the application
+   - Check the DATABASE_URL in your .env file
+   - Ensure proper database permissions
+   
+   ### Authentication Issues
+   - Clear browser cookies and try again
+   - Check if Flask-Login is properly configured
+   - Verify session management setup
 
-# Database URL (example: sqlite:///./app.sqlite)
-DATABASE_URL=your_database_url_here
-```
+---
 
-```bash
-cp .env.template .env
-```
+## 6. Usage Examples
 
-Edit `.env` and add your OpenAI API keys and other required environment variables.
+   ## Usage Examples
+   
+   ### Creating a User
+   ```bash
+   curl -X POST http://localhost:5000/user/create-user \
+     -H "Content-Type: application/json" \
+     -d '{"username": "testuser", "email": "test@example.com", "password": "securepassword"}'
+   ```
+   
+   ### Creating a Note
+   ```bash
+   curl -X POST http://localhost:5000/note/store-note \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <your-session-token>" \
+     -d '{"title": "My Note", "content": "This is my note content"}'
+   ```
 
-### 4. Run the application
+
+## 7. Run the application
 
 ```bash
 python app.py
