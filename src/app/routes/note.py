@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
+
 from src.data.models.notes import Note
 
 note_bp = Blueprint('note', __name__, url_prefix='/note')

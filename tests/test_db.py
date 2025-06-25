@@ -1,7 +1,8 @@
 import os
 import pytest
-from src.data.db import get_engine, get_session_local, Base, init_db
+
 from src.data.models import User, Note
+from src.data.db import get_engine, get_session_local, Base, init_db
 
 TEST_DATABASE_URL = "sqlite:///./testdb.sqlite"
 

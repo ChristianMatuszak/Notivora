@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user, logout_user, login_user
 from werkzeug.security import generate_password_hash
+
 from src.data.models.flashcards import Flashcard
 from src.data.models.notes import Note
 from src.data.models.users import User
@@ -287,7 +288,7 @@ def change_password(user_id):
     if not current_password or not new_password:
         return jsonify({"error": "Current and new passwords are required"}), 400
 
-    if not user.check_password(current_password):
+    if not user.verify_password(current_password):
         return jsonify({"error": "Current password is incorrect"}), 400
 
     try:
@@ -328,6 +329,7 @@ def request_password_reset():
     reset_url = f"https://in-development.com/reset-password?token={token}"
     send_reset_email(user.email, reset_url)
 
+    session.close()
     return jsonify({"message": "Password reset request received. Instructions will be sent to your email."}), 200
 
 @user_bp.route("/password-reset", methods=["POST"])

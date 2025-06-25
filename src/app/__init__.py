@@ -1,8 +1,10 @@
-import logging
 import os
+import logging
 from dotenv import load_dotenv
-from flask import Flask
 from flask_login import LoginManager
+from flask import Flask, current_app
+
+from src.data.models import User
 from src.app.routes.llm import llm_bp
 from src.app.routes.note import note_bp
 from src.app.routes.ping import ping_bp
@@ -58,6 +60,14 @@ def create_app(log_file='app.log', database_url=None, testing=False):
         app.config['SESSION_LOCAL'] = get_session_local(engine)
 
         login_manager.init_app(app)
+
+        @login_manager.user_loader
+        def load_user(user_id):
+            session = current_app.config['SESSION_LOCAL']()
+            try:
+                return session.query(User).get(int(user_id))
+            finally:
+                session.close()
 
         if testing:
             app.config["TESTING"] = True
