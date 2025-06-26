@@ -1,8 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 
-from src.data.models.notes import Note
-from src.data.models.flashcards import Flashcard
+from src.app.services.llm_service import LLMService
 from src.utils.constants import HttpStatus, ErrorMessages
 from src.utils.llm_api import generate_flashcards_from_summary, generate_summary_from_note, \
     check_user_answer_with_llm
@@ -31,40 +30,16 @@ def generate_flashcard(note_id):
         500 Internal Server Error if flashcard generation or database operations fail.
     """
     session = current_app.config['SESSION_LOCAL']()
+    service = LLMService(session)
+
     try:
-        note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
-        if not note:
-            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-        if not note.ai_summary:
-            return jsonify({"error": ErrorMessages.NO_SUMMARY_AVAILABLE}), HttpStatus.NOT_FOUND
-
-        existing_cards = session.query(Flashcard).filter(Flashcard.note_id == note_id).all()
-        flashcards_data = generate_flashcards_from_summary(note.ai_summary, note.language)
-
-        for card in existing_cards:
-            session.delete(card)
-
-        for card in flashcards_data:
-            flashcard = Flashcard(
-                question=card['question'],
-                answer=card['answer'],
-                type='',
-                note_id=note_id,
-                learned=False,
-                last_studied=None,
-                times_reviewed=0
-            )
-            session.add(flashcard)
-
-        session.commit()
-
+        service.generate_flashcards(note_id, current_user.id, generate_flashcards_from_summary)
         return jsonify({"message": "Flashcards generated successfully"}), HttpStatus.CREATED
-
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.NOT_FOUND
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
-
     finally:
         session.close()
 
@@ -91,28 +66,18 @@ def generate_summary(note_id):
     """
 
     session = current_app.config['SESSION_LOCAL']()
+    service = LLMService(session)
+
     try:
-
-        note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
-        if not note:
-            return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-        if not note.original:
-            return jsonify({"error": ErrorMessages.EMPTY_NOTE_CONTENT}), HttpStatus.BAD_REQUEST
-
-
-        summary, language = generate_summary_from_note(note.original)
-
-        note.ai_summary = summary
-        note.language = language
-        session.commit()
-
+        summary, _ = service.generate_summary(note_id, current_user.id, generate_summary_from_note)
         return jsonify({"ai_summary": summary}), HttpStatus.OK
-
+    except ValueError as ve:
+        code = HttpStatus.NOT_FOUND if str(
+            ve) == ErrorMessages.NOTE_NOT_FOUND else HttpStatus.BAD_REQUEST
+        return jsonify({"error": str(ve)}), code
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
-
     finally:
         session.close()
 
@@ -139,18 +104,23 @@ def check_answer():
     question = data.get('question')
     correct_answer = data.get('correct_answer')
     user_answer = data.get('user_answer')
+    language = data.get('language')
+
+    session = current_app.config['SESSION_LOCAL']()
+    service = LLMService(session)
 
     if not all([question, correct_answer, user_answer]):
         return jsonify({"error": ErrorMessages.MISSING_ANSWER_FIELD}), HttpStatus.BAD_REQUEST
+    if not language:
+        return jsonify({"error": ErrorMessages.MISSING_LANGUAGE}), HttpStatus.BAD_REQUEST
 
     try:
-        language = data.get('language')
-        if not language:
-            return jsonify({"error": ErrorMessages.MISSING_LANGUAGE}), HttpStatus.BAD_REQUEST
-
-        result = check_user_answer_with_llm(question, correct_answer, user_answer, language)
-
+        result = service.check_answer(question, correct_answer, user_answer, language,
+                                      check_user_answer_with_llm)
         return jsonify(result), HttpStatus.OK
-
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), HttpStatus.BAD_REQUEST
     except Exception as error:
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+    finally:
+        session.close()
