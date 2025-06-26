@@ -1,12 +1,9 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user, logout_user, login_user
 
+from src.app.services.user_service import UserService
 from src.utils.constants import HttpStatus, ErrorMessages
-from src.data.models.flashcards import Flashcard
-from src.data.models.notes import Note
-from src.data.models.users import User
-from src.utils.email import send_reset_email
-from src.utils.token import generate_reset_token, verify_reset_token
+
 
 user_bp = Blueprint('user', __name__, url_prefix='/user')
 
@@ -33,25 +30,16 @@ def create_user():
     data = request.get_json()
     session = current_app.config['SESSION_LOCAL']()
 
-    username = data.get("username")
-    email = data.get("email")
-    password = data.get("password")
-
-    if not username or not email or not password:
-        return jsonify({"error": ErrorMessages.USERNAME_EMAIL_PASSWORD_REQUIRED}), HttpStatus.BAD_REQUEST
-
-    if session.query(User).filter_by(username=username).first():
-        return jsonify({"error": ErrorMessages.USER_ALREADY_EXISTS}), HttpStatus.BAD_REQUEST
-
-    if session.query(User).filter_by(email=email).first():
-        return jsonify({"error": ErrorMessages.EMAIL_ALREADY_EXISTS}), HttpStatus.BAD_REQUEST
-
     try:
-        new_user = User(username=username, email=email)
-        new_user.set_password(password)
-        session.add(new_user)
-        session.commit()
+        user_service = UserService(session)
+        new_user = user_service.create_user(
+            data.get("username"),
+            data.get("email"),
+            data.get("password")
+        )
         return jsonify({"message": "User created successfully", "user_id": new_user.id}), HttpStatus.CREATED
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.BAD_REQUEST
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
@@ -78,19 +66,27 @@ def get_user(user_id):
         500 Internal Server Error on unexpected errors.
     """
     session = current_app.config['SESSION_LOCAL']()
-    user = session.query(User).filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-    if user.id != current_user.id:
-        return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
 
     try:
-        user_data = {"id": user.id, "username": user.username, "email": user.email}
+        user_service = UserService(session)
+        user = user_service.get_user_if_authorized(user_id, current_user.id)
+
+        user_data = {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        }
         return jsonify(user_data), HttpStatus.OK
+
+    except ValueError as error:
+            return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
+
+    except PermissionError:
+        return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
+
     except Exception as error:
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -115,33 +111,27 @@ def update_user(user_id):
     """
     session = current_app.config['SESSION_LOCAL']()
     data = request.get_json()
-    user = session.query(User).filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-    if user.id != current_user.id:
-        return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
-
-    username = data.get("username")
-    email = data.get("email")
-
-    if username:
-        if session.query(User).filter(User.username == username, User.id != user.id).first():
-            return jsonify({"error": ErrorMessages.USER_ALREADY_EXISTS}), HttpStatus.BAD_REQUEST
-        user.username = username
-
-    if email:
-        if session.query(User).filter(User.email == email, User.id != user.id).first():
-            return jsonify({"error": ErrorMessages.EMAIL_ALREADY_EXISTS}), HttpStatus.BAD_REQUEST
-        user.email = email
 
     try:
-        session.commit()
+        user_service = UserService(session)
+        user_service.update_user(
+            user_id=user_id,
+            requesting_user_id=current_user.id,
+            username=data.get("username"),
+            email=data.get("email")
+        )
         return jsonify({"message": "User updated successfully"}), HttpStatus.OK
+
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.BAD_REQUEST
+
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), HttpStatus.FORBIDDEN
+
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -163,24 +153,24 @@ def delete_user(user_id):
         500 Internal Server Error on unexpected errors.
     """
     session = current_app.config['SESSION_LOCAL']()
-    user = session.query(User).filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-    if user.id != current_user.id:
-        return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
 
     try:
+        user_service = UserService(session)
+        user_service.delete_user(user_id, current_user.id)
+
         logout_user()
-        session.query(Note).filter_by(user_id=user.id).delete()
-        session.query(Flashcard).filter_by(user_id=user.id).delete()
-        session.delete(user)
-        session.commit()
         return jsonify({"message": "User deleted successfully"}), HttpStatus.OK
+
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.NOT_FOUND
+
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), HttpStatus.FORBIDDEN
+
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -212,13 +202,16 @@ def list_users():
     """
     session = current_app.config['SESSION_LOCAL']()
     try:
-        if not current_user.is_admin:
-            return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
-        users = session.query(User).all()
-        user_list = [{"id": user.id, "username": user.username, "email": user.email} for user in users]
+        user_service = UserService(session)
+        user_list = user_service.get_all_users_if_admin(current_user)
         return jsonify(user_list), HttpStatus.OK
+
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), HttpStatus.FORBIDDEN
+
     except Exception as error:
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -238,18 +231,15 @@ def fetch_flashcards(user_id):
         500 Internal Server Error on unexpected errors.
     """
     session = current_app.config['SESSION_LOCAL']()
-    user = session.query(User).filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-    if user.id != current_user.id:
-        return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
+    service = UserService(session)
 
     try:
-        flashcards = session.query(Flashcard).filter_by(user_id=user.id).all()
-        flashcard_list = [{"id": fc.id, "question": fc.question, "answer": fc.answer} for fc in flashcards]
+        flashcard_list = service.fetch_flashcards_for_user(user_id, current_user.id)
         return jsonify(flashcard_list), HttpStatus.OK
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), HttpStatus.NOT_FOUND
+    except PermissionError as pe:
+        return jsonify({"error": str(pe)}), HttpStatus.FORBIDDEN
     except Exception as error:
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
     finally:
@@ -274,30 +264,27 @@ def change_password(user_id):
     """
     session = current_app.config['SESSION_LOCAL']()
     data = request.get_json()
-    user = session.query(User).filter_by(id=user_id).first()
-
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
-
-    if user.id != current_user.id:
-        return jsonify({"error": ErrorMessages.UNAUTHORIZED_ACCESS}), HttpStatus.FORBIDDEN
-
-    new_password = data.get("new_password")
-    current_password = data.get("current_password")
-
-    if not current_password or not new_password:
-        return jsonify({"error": ErrorMessages.CURRENT_NEW_PASSWORD_REQUIRED}), HttpStatus.BAD_REQUEST
-
-    if not user.verify_password(current_password):
-        return jsonify({"error": ErrorMessages.PASSWORD_INCORRECT}), HttpStatus.BAD_REQUEST
 
     try:
-        user.set_password(new_password)
-        session.commit()
+        user_service = UserService(session)
+        user_service.change_password(
+            user_id,
+            current_user.id,
+            data.get("current_password"),
+            data.get("new_password"),
+        )
         return jsonify({"message": "Password changed successfully"}), HttpStatus.OK
+
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.BAD_REQUEST
+
+    except PermissionError as error:
+        return jsonify({"error": str(error)}), HttpStatus.FORBIDDEN
+
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -316,21 +303,21 @@ def request_password_reset():
     """
     data = request.get_json()
     session = current_app.config['SESSION_LOCAL']()
-    email = data.get("email")
 
-    if not email:
-        return jsonify({"error": ErrorMessages.EMAIL_REQUIRED}), HttpStatus.BAD_REQUEST
+    try:
+        user_service = UserService(session)
+        user_service.request_password_reset(data.get("email"))
+        return jsonify({
+                           "message": "Password reset request received. Instructions will be sent to your email."}), HttpStatus.OK
 
-    user = session.query(User).filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.BAD_REQUEST
 
-    token = generate_reset_token(user.id)
-    reset_url = f"https://in-development.com/reset-password?token={token}"
-    send_reset_email(user.email, reset_url)
+    except Exception as error:
+        return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
 
-    session.close()
-    return jsonify({"message": "Password reset request received. Instructions will be sent to your email."}), HttpStatus.OK
+    finally:
+        session.close()
 
 @user_bp.route("/password-reset", methods=["POST"])
 def password_reset():
@@ -354,31 +341,23 @@ def password_reset():
     """
     data = request.get_json()
     session = current_app.config['SESSION_LOCAL']()
-    token = data.get("token")
-    new_password = data.get("new_password")
-    confirm_password = data.get("confirm_password")
-
-    if not token or not new_password or not confirm_password:
-        return jsonify({"error": ErrorMessages.TOKEN_PASSWORD_FIELDS_REQUIRED}), HttpStatus.BAD_REQUEST
-
-    if new_password != confirm_password:
-        return jsonify({"error": ErrorMessages.PASSWORD_MISMATCH}), HttpStatus.BAD_REQUEST
-
-    user_id = verify_reset_token(token)
-    if not user_id:
-        return jsonify({"error": ErrorMessages.EXPIRED_INVALID_TOKEN}), HttpStatus.BAD_REQUEST
-
-    user = session.query(User).filter_by(id=user_id).first()
-    if not user:
-        return jsonify({"error": ErrorMessages.USER_NOT_FOUND}), HttpStatus.NOT_FOUND
 
     try:
-        user.set_password(new_password)
-        session.commit()
+        user_service = UserService(session)
+        user_service.reset_password(
+            data.get("token"),
+            data.get("new_password"),
+            data.get("confirm_password")
+        )
         return jsonify({"message": "Password has been reset successfully"}), HttpStatus.OK
+
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.BAD_REQUEST
+
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -396,18 +375,19 @@ def login():
         401 Unauthorized if credentials are invalid.
     """
     data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
-
-    if not username or not password:
-        return jsonify({"error": ErrorMessages.USERNAME_PASSWORD_REQUIRED}), HttpStatus.BAD_REQUEST
-
     session = current_app.config['SESSION_LOCAL']()
-    user = session.query(User).filter_by(username=username).first()
-    session.close()
 
-    if user is None or not user.verify_password(password):
-        return jsonify({"error": ErrorMessages.INVALID_CREDENTIALS}), HttpStatus.UNAUTHORIZED
+    try:
+        user_service = UserService(session)
+        user = user_service.authenticate_user(
+            data.get("username"),
+            data.get("password"),
+        )
+        login_user(user)
+        return jsonify({"message": "Login successful", "user_id": user.id}), HttpStatus.OK
 
-    login_user(user)
-    return jsonify({"message": "Login successful", "user_id": user.id}), HttpStatus.OK
+    except ValueError as error:
+        return jsonify({"error": str(error)}), HttpStatus.UNAUTHORIZED
+
+    finally:
+        session.close()

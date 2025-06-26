@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 
+from src.app.services.note_service import NoteService
 from src.utils.constants import HttpStatus, ErrorMessages
-from src.data.models.notes import Note
 
 note_bp = Blueprint('note', __name__, url_prefix='/note')
 
@@ -26,28 +26,15 @@ def store_note():
     """
     data = request.get_json()
     session = current_app.config['SESSION_LOCAL']()
-
-    title = data.get('title')
-    content = data.get('content')
-
-    if not title or not content:
-        return jsonify({"error": ErrorMessages.TITLE_CONTENT_REQUIRED}), HttpStatus.BAD_REQUEST
-
-    note = Note(
-        title=title,
-        original=content,
-        user_id=current_user.id
-    )
+    service = NoteService(session)
 
     try:
-        session.add(note)
-        session.commit()
+        note = service.create_note(current_user.id, data.get('title'), data.get('content'))
         return jsonify({'message': 'Note created', 'note_id': note.note_id}), HttpStatus.CREATED
-
+    except ValueError as err:
+        return jsonify({"error": str(err)}), HttpStatus.BAD_REQUEST
     except Exception as error:
-        session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
-
     finally:
         session.close()
 
@@ -73,16 +60,18 @@ def get_note(note_id):
     """
 
     session = current_app.config['SESSION_LOCAL']()
+    service = NoteService(session)
 
     try:
-        note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
+        note = service.get_note_by_id(note_id, current_user.id)
         if not note:
             return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
-        return jsonify({"ai_summary": note.ai_summary, })
+        return jsonify({"ai_summary": note.ai_summary}), HttpStatus.OK
 
     except Exception as error:
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -104,17 +93,18 @@ def get_notes():
     """
 
     session = current_app.config['SESSION_LOCAL']()
+    service = NoteService(session)
+
     try:
-        notes = session.query(Note).filter(Note.user_id == current_user.id).all()
-        result = []
-        for note in notes:
-            result.append({
-                "note_id": note.note_id,
-                "title": note.title,
-            })
+        notes = service.get_all_notes_for_user(current_user.id)
+        result = [
+            {"note_id": note.note_id, "title": note.title} for note in notes
+        ]
         return jsonify(result), HttpStatus.OK
+
     except Exception as error:
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -139,28 +129,24 @@ def update_note(note_id):
         500 Internal Server Error if the update operation fails.
     """
 
-    session = current_app.config['SESSION_LOCAL']()
     data = request.get_json()
-
     title = data.get('title')
     content = data.get('content')
 
+    session = current_app.config['SESSION_LOCAL']()
+    service = NoteService(session)
+
     try:
-        note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
-        if not note:
+        success = service.update_note(note_id, current_user.id, title, content)
+        if not success:
             return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
-        if title:
-            note.title = title
-        if content:
-            note.original = content
-
-        session.commit()
         return jsonify({"message": "Note updated successfully"}), HttpStatus.OK
 
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
@@ -185,18 +171,19 @@ def delete_note(note_id):
     """
 
     session = current_app.config['SESSION_LOCAL']()
+    service = NoteService(session)
+
     try:
-        note = session.query(Note).filter(Note.note_id == note_id, Note.user_id == current_user.id).first()
-        if not note:
+        success = service.delete_note(note_id, current_user.id)
+        if not success:
             return jsonify({"error": ErrorMessages.NOTE_NOT_FOUND}), HttpStatus.NOT_FOUND
 
-        session.delete(note)
-        session.commit()
         return jsonify({"message": "Note deleted successfully"}), HttpStatus.OK
 
     except Exception as error:
         session.rollback()
         return jsonify({"error": str(error)}), HttpStatus.INTERNAL_SERVER_ERROR
+
     finally:
         session.close()
 
