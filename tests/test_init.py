@@ -4,6 +4,7 @@ import pytest
 import time
 
 from src.app import create_app
+from conftest import TestConfig
 
 @pytest.fixture
 def app(tmp_path):
@@ -17,10 +18,9 @@ def app(tmp_path):
     Returns:
         flask.Flask: The Flask application instance.
     """
-    test_db_path = tmp_path / "test.sqlite"
-    db_url = f"sqlite:///{test_db_path}"
+    TestConfig.DATABASE_URL = "sqlite:///:memory:"
 
-    app = create_app(database_url=db_url)
+    app = create_app(config_class=TestConfig)
     return app
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def test_ping_route(client):
     assert response.status_code == 200
     assert response.data == b"pong"
 
-def test_create_app_raises(monkeypatch):
+def test_create_app_raises(monkeypatch, test_log_file):
     """
     Simulate an exception during Flask app initialization.
 
@@ -82,7 +82,7 @@ def test_create_app_raises(monkeypatch):
 
     monkeypatch.setattr("flask.Flask.__init__", fake_flask_init)
 
-    app = create_app()
+    app = create_app(config_class=TestConfig)
     assert app is None
 
 @pytest.fixture
@@ -127,7 +127,7 @@ def test_log_file_creation(monkeypatch, test_log_file):
 
     monkeypatch.setattr("flask.Flask.__init__", fake_flask_init)
 
-    app = create_app()
+    app = create_app(config_class=TestConfig)
     assert app is None
 
     time.sleep(0.1)

@@ -1,5 +1,6 @@
 import os
 import smtplib
+
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
@@ -10,7 +11,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL")
-SECRET_KEY = os.getenv("SECRET_KEY")
+
 
 def send_reset_email(to_email: str, reset_link: str) -> None:
     subject = "Password Reset Request"

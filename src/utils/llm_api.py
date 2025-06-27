@@ -1,12 +1,13 @@
-import os
 import json
 
 from typing import Tuple
 from openai import OpenAI
 from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
 
+from src.config.config import Config
+
 def get_openai_client():
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = Config.OPENAI_API_KEY
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not set")
     return OpenAI(api_key=api_key)
@@ -198,4 +199,3 @@ def check_user_answer_with_llm(question: str, correct_answer: str, user_answer: 
     except Exception as error:
         print(f"OpenAI API error (answer check): {error}")
         return {"evaluation": "Could not evaluate answer."}
-

@@ -1,9 +1,14 @@
 import pytest
 
 from src.app import create_app
+from src.config.config import DevelopmentConfig
 from src.data.db import Base, get_engine, get_session_local
 from src.data.models import Note
 from src.data.models.users import User
+
+class TestConfig(DevelopmentConfig):
+    TESTING = True
+    DATABASE_URL = "sqlite:///:memory:"
 
 @pytest.fixture(scope="module")
 def test_engine():
@@ -16,14 +21,13 @@ def test_engine():
     Yields:
         sqlalchemy.engine.Engine: The SQLAlchemy engine connected to the test database.
     """
-    engine = get_engine("sqlite:///./test.sqlite")
-    Base.metadata.drop_all(bind=engine)
+    engine = get_engine(TestConfig.DATABASE_URL)
     Base.metadata.create_all(bind=engine)
     yield engine
     Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope="module")
-def test_app():
+def test_app(test_engine):
     """
     Creates and configures a Flask application instance for testing.
 
@@ -34,7 +38,10 @@ def test_app():
     Yields:
         flask.Flask: The Flask application configured for testing.
     """
-    app = create_app(database_url="sqlite:///./test.sqlite", testing=True)
+    app = create_app(TestConfig)
+    app.config['ENGINE'] = test_engine
+    app.config['SESSION_LOCAL'] = get_session_local(test_engine)
+
     ctx = app.app_context()
     ctx.push()
     yield app
