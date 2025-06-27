@@ -1,6 +1,6 @@
 from src.data.models import User, Note, Flashcard
 from  src.utils.constants import ErrorMessages
-from src.utils.email import send_reset_email
+from src.utils.email_utils import send_reset_email
 from src.utils.token import generate_reset_token, verify_reset_token
 
 
