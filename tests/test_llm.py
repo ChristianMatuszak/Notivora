@@ -38,13 +38,18 @@ def test_generate_flashcards(login_auth_client, create_note, session):
     create_note.language = "en"
     session.commit()
 
-    with patch("src.app.routes.llm.generate_flashcards_from_summary", return_value=[
-        {"question": "What is this?", "answer": "A test flashcard."}
-    ]):
+    flashcards_mock = [{"question": "What is this?", "answer": "A test flashcard."}]
+
+    with patch("src.app.routes.llm.generate_flashcards_from_summary", return_value=flashcards_mock), \
+            patch(
+                "src.app.services.flashcard_service.FlashcardService.save_flashcards") as mock_save:
         response = login_auth_client.post(f"/llm/generate-flashcard/{create_note.note_id}")
+
         assert response.status_code == 201
         data = response.get_json()
         assert data["message"] == "Flashcards generated successfully"
+
+        mock_save.assert_called_once_with(create_note.note_id, flashcards_mock)
 
 def test_check_answer(login_auth_client):
     """

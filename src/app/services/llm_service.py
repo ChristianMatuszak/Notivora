@@ -1,5 +1,4 @@
 from src.data.models.notes import Note
-from src.data.models.flashcards import Flashcard
 from src.utils.constants import ErrorMessages
 
 class LLMService:
@@ -12,46 +11,30 @@ class LLMService:
         """
         self.session = session
 
-    def generate_flashcards(self, note_id: int, user_id: int, generate_flashcards_from_summary) -> None:
+    def generate_flashcards(self, note_id: int, user_id: int, generate_flashcards_from_summary, flashcard_service) -> None:
         """
-        Generates flashcards from the AI summary of a specified note and saves them to the database.
+        Generates flashcards from the AI summary of a specified note and saves them using the flashcard service.
 
         Args:
             note_id (int): The ID of the note for which flashcards should be generated.
             user_id (int): The ID of the user owning the note.
-            generate_flashcards_from_summary (callable): A function that generates flashcards from a summary.
+            generate_flashcards_from_summary (callable): Function generating flashcards from a summary.
+            flashcard_service (FlashcardService): Service to handle flashcard DB operations.
 
         Raises:
-            ValueError: If the note does not exist or if no AI summary is available.
+            ValueError: If the note does not exist or no AI summary is available.
         """
-
         note = self.session.query(Note).filter(Note.note_id == note_id, Note.user_id == user_id).first()
         if not note:
             raise ValueError(ErrorMessages.NOTE_NOT_FOUND)
-
         if not note.ai_summary:
             raise ValueError(ErrorMessages.NO_SUMMARY_AVAILABLE)
-
-        existing_cards = self.session.query(Flashcard).filter(Flashcard.note_id == note_id).all()
-        for card in existing_cards:
-            self.session.delete(card)
 
         flashcards_data = generate_flashcards_from_summary(note.ai_summary, note.language)
         if not flashcards_data:
             return
 
-        for card in flashcards_data:
-            flashcard = Flashcard(
-                question=card['question'],
-                answer=card['answer'],
-                type='',
-                note_id=note_id,
-                learned=False,
-                last_studied=None,
-                times_reviewed=0
-            )
-            self.session.add(flashcard)
-
+        flashcard_service.save_flashcards(note_id, flashcards_data)
         self.session.commit()
 
     def generate_summary(self, note_id: int, user_id: int, generate_summary_from_note) -> tuple[

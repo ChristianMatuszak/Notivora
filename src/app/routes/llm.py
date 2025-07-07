@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
 
+from src.app.services.flashcard_service import FlashcardService
 from src.app.services.llm_service import LLMService
 from src.utils.constants import HttpStatus, ErrorMessages
 from src.utils.llm_api import generate_flashcards_from_summary, generate_summary_from_note, \
@@ -31,9 +32,15 @@ def generate_flashcard(note_id):
     """
     session = current_app.config['SESSION_LOCAL']()
     service = LLMService(session)
+    flashcard_service = FlashcardService(session)
 
     try:
-        service.generate_flashcards(note_id, current_user.id, generate_flashcards_from_summary)
+        service.generate_flashcards(
+            note_id,
+            current_user.id,
+            generate_flashcards_from_summary,
+            flashcard_service
+        )
         return jsonify({"message": "Flashcards generated successfully"}), HttpStatus.CREATED
     except ValueError as error:
         return jsonify({"error": str(error)}), HttpStatus.NOT_FOUND
