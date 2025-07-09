@@ -3,6 +3,7 @@ from flask_login import LoginManager
 from flask import Flask, current_app
 
 from src.data.models import User
+from src.app.routes.quiz import quiz_bp
 from src.app.routes.llm import llm_bp
 from src.app.routes.note import note_bp
 from src.app.routes.ping import ping_bp
@@ -65,6 +66,7 @@ def create_app(config_class, log_file='app.log'):
         app.register_blueprint(user_bp)
         app.register_blueprint(llm_bp)
         app.register_blueprint(note_bp)
+        app.register_blueprint(quiz_bp)
 
         logging.basicConfig(
             filename=log_file,
