@@ -1,3 +1,4 @@
+from src.config.config import Config
 from src.data.models.notes import Note
 from src.utils.constants import ErrorMessages
 
@@ -27,8 +28,17 @@ class NoteService:
             ValueError: If title or content are empty.
             Exception: If database commit fails.
         """
-        if not title or not content:
-            raise ValueError(ErrorMessages.TITLE_CONTENT_REQUIRED)
+        if not title:
+            raise ValueError(ErrorMessages.TITLE_REQUIRED)
+
+        if not content:
+            raise ValueError(ErrorMessages.EMPTY_NOTE_CONTENT)
+
+        if len(title) > Config.NOTE_TITLE_MAX_LENGTH:
+            raise ValueError(ErrorMessages.TITLE_TOO_LONG)
+
+        if len(content) > Config.NOTE_CONTENT_MAX_LENGTH:
+            raise ValueError(ErrorMessages.CONTENT_TOO_LONG)
 
         note = Note(
             title=title,

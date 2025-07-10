@@ -159,7 +159,16 @@ def create_note(session, create_user):
     Yields:
         Note: The newly created Note ORM instance.
     """
-    note = Note(title="AI Note", original="This is original content.", user_id=create_user.id)
+    note = Note(
+        title="AI Note",
+        original=(
+            "Artificial intelligence (AI) involves the simulation of human intelligence "
+            "in machines designed to think and act like humans. Common applications include "
+            "machine learning, natural language processing, and robotics."
+        ),
+        ai_summary="AI simulates human intelligence in machines for tasks like learning and robotics.",
+        user_id=create_user.id
+    )
     session.add(note)
     session.commit()
     yield note
