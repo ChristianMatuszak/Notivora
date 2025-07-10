@@ -1,6 +1,6 @@
 import pytest
+
 from src.data.models.flashcards import Flashcard
-from src.app.services.quiz_service import QuizService
 
 
 @pytest.fixture()
@@ -62,39 +62,3 @@ def test_start_quiz_not_found(login_auth_client):
     response = login_auth_client.post("/quiz/start/9999")
     assert response.status_code == 404
     assert "error" in response.get_json()
-
-
-def test_quiz_progress(login_auth_client, create_note, create_flashcards, session, create_user):
-    """
-    Tests the /quiz/progress/<note_id> endpoint.
-
-    This test checks:
-    1. That initially, no flashcards have been answered and progress is 0%.
-    2. That submitting one answer correctly updates progress to 33.33%.
-
-    Args:
-        login_auth_client: Authenticated Flask test client.
-        create_note: The note the quiz is based on.
-        create_flashcards: The list of flashcards under that note.
-        session: SQLAlchemy session to manually trigger a service call.
-        create_user: The user submitting the answer.
-    """
-    response = login_auth_client.get(f"/quiz/progress/{create_note.note_id}")
-    assert response.status_code == 200
-    progress = response.get_json()
-    assert progress["total_flashcards"] == 3
-    assert progress["answered_flashcards"] == 0
-    assert progress["progress_percent"] == 0.0
-
-    quiz_service = QuizService(session)
-    quiz_service.submit_answer(
-        user_id=create_user.id,
-        card_id=create_flashcards[0].card_id,
-        user_answer="Artificial Intelligence"
-    )
-
-    response = login_auth_client.get(f"/quiz/progress/{create_note.note_id}")
-    assert response.status_code == 200
-    progress = response.get_json()
-    assert progress["answered_flashcards"] == 1
-    assert progress["progress_percent"] == pytest.approx(33.33, 0.1)

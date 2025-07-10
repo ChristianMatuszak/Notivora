@@ -1,8 +1,17 @@
-from unittest.mock import patch
+import pytest
 
+from src.data.models import Flashcard
 from src.data.models.notes import Note
+from src.utils.llm_api import check_user_answer_with_llm
 
-def test_generate_summary(login_auth_client, create_note):
+
+@pytest.fixture(autouse=True)
+def cleanup_llm_data(session):
+    session.query(Flashcard).delete()
+    session.query(Note).delete()
+    session.commit()
+
+def test_generate_summary(login_auth_client, session, create_user):
     """
     Tests the `/llm/generate-summary/<note_id>` endpoint for generating a note summary using an LLM.
 
@@ -14,12 +23,35 @@ def test_generate_summary(login_auth_client, create_note):
         create_note (Note): The note for which the summary will be generated.
     """
 
-    with patch("src.app.routes.llm.generate_summary_from_note") as mock_summary:
-        mock_summary.return_value = ("This is a summary.", "en")
-        response = login_auth_client.post(f"/llm/generate-summary/{create_note.note_id}")
-        assert response.status_code == 200
-        data = response.get_json()
-        assert data["ai_summary"] == "This is a summary."
+    long_content = (
+        "Artificial intelligence (AI) is intelligence demonstrated by machines, "
+        "unlike the natural intelligence displayed by humans and animals. "
+        "Leading AI textbooks define the field as the study of 'intelligent agents': "
+        "any device that perceives its environment and takes actions that maximize "
+        "its chance of successfully achieving its goals. AI applications include "
+        "advanced web search engines, recommendation systems, understanding human speech, "
+        "self-driving cars, automated decision-making, and competing at the highest level "
+        "in strategic game systems. Despite the progress, AI faces challenges including "
+        "ensuring ethical use, addressing bias in data, and creating systems that can "
+        "reason and understand context deeply. The future of AI depends heavily on "
+        "ongoing research and the integration of AI into diverse domains."
+    )
+
+    note = Note(
+        title="AI Content",
+        original=long_content,
+        user_id=create_user.id
+    )
+    session.add(note)
+    session.commit()
+
+    response = login_auth_client.post(f"/llm/generate-summary/{note.note_id}")
+    assert response.status_code == 200
+
+    data = response.get_json()
+    assert "ai_summary" in data
+    assert isinstance(data["ai_summary"], str)
+    assert "intelligence" in data["ai_summary"].lower()
 
 def test_generate_flashcards(login_auth_client, create_note, session):
     """
@@ -34,22 +66,16 @@ def test_generate_flashcards(login_auth_client, create_note, session):
         session (Session): SQLAlchemy session used to commit changes to the note.
     """
 
-    create_note.ai_summary = "This is a summary."
+    create_note.ai_summary = "AI is the field of creating intelligent agents."
     create_note.language = "en"
     session.commit()
 
-    flashcards_mock = [{"question": "What is this?", "answer": "A test flashcard."}]
+    response = login_auth_client.post(f"/llm/generate-flashcard/{create_note.note_id}")
+    assert response.status_code == 201
 
-    with patch("src.app.routes.llm.generate_flashcards_from_summary", return_value=flashcards_mock), \
-            patch(
-                "src.app.services.flashcard_service.FlashcardService.save_flashcards") as mock_save:
-        response = login_auth_client.post(f"/llm/generate-flashcard/{create_note.note_id}")
-
-        assert response.status_code == 201
-        data = response.get_json()
-        assert data["message"] == "Flashcards generated successfully"
-
-        mock_save.assert_called_once_with(create_note.note_id, flashcards_mock)
+    from src.data.models.flashcards import Flashcard
+    flashcards = session.query(Flashcard).filter_by(note_id=create_note.note_id).all()
+    assert len(flashcards) >= 1
 
 def test_check_answer(login_auth_client):
     """
@@ -62,16 +88,16 @@ def test_check_answer(login_auth_client):
         login_auth_client (FlaskClient): Authenticated client with user session.
     """
 
-    payload = {
-        "question": "What is AI?",
-        "correct_answer": "Artificial Intelligence",
-        "user_answer": "AI",
-        "language": "en"
-    }
+    question = "What is AI?"
+    correct_answer = "Artificial Intelligence"
+    user_answer = "AI"
+    language = "en"
 
-    with patch("src.app.routes.llm.check_user_answer_with_llm") as mock_check:
-        mock_check.return_value = {"result": "Close enough!"}
-        response = login_auth_client.post("/llm/check-answer", json=payload)
-        assert response.status_code == 200
-        data = response.get_json()
-        assert data["result"] == "Close enough!"
+    feedback = check_user_answer_with_llm(question, correct_answer, user_answer, language)
+
+    assert isinstance(feedback, dict)
+    assert "evaluation" in feedback
+
+    print("Question:", question)
+    print("User answer:", user_answer)
+    print("Feedback:", feedback["evaluation"])

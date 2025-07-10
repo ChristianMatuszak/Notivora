@@ -1,4 +1,5 @@
 import json
+import re
 
 from typing import Tuple
 from openai import OpenAI
@@ -34,18 +35,22 @@ def generate_summary_from_note(note_content: str) -> Tuple[str, str]:
                 role="system",
                 content=(
                     "You are an assistant that summarizes notes and identifies the language used. "
-                    "When summarizing, create a clear and easy-to-understand summary. "
-                    "If it helps comprehension, organize important information into tables, bullet points, or lists, "
-                    "even if the original note doesn't explicitly use such formats."
+                    "Return only JSON in the required format."
                 )
             ),
             ChatCompletionUserMessageParam(
                 role="user",
                 content=(
-                    f"Summarize the following note without missing important content, "
-                    f"and tell me the language it is written in. "
-                    f"Respond in JSON format like: {{\"summary\": \"...\", \"language\": \"...\"}}.\n"
-                    f"Make sure the summary is written in the same language as the note.\n"
+                    "You will be given a user-written note. Your job is to:\n"
+                    "1. Read and understand the note exactly as it is.\n"
+                    "2. Detect its original language (e.g. en, de, fr, etc).\n"
+                    "3. Write a **clear and concise summary** of the note that captures all key information.\n"
+                    "4. Return your response in the following **exact JSON** format:\n\n"
+                    "{ \"summary\": \"<summary here>\", \"language\": \"<language code>\" }\n\n"
+                    "⚠️ Important:\n"
+                    "- Do NOT add any explanations before or after the JSON.\n"
+                    "- Do NOT mention originality or quality.\n"
+                    "- Only return valid JSON.\n\n"
                     f"Note:\n{note_content}"
                 )
             )
@@ -55,23 +60,33 @@ def generate_summary_from_note(note_content: str) -> Tuple[str, str]:
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.5,
-            max_tokens=200
+            max_tokens=300
         )
 
         content = response.choices[0].message.content.strip()
+        print("🔍 Raw summary response:\n", content)
 
         try:
-            data = json.loads(content)
-            summary = data.get("summary", "")
-            language = data.get("language", "")
+            return_data = json.loads(content)
         except json.JSONDecodeError:
-            summary = content
-            language = ""
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                try:
+                    return_data = json.loads(match.group())
+                except json.JSONDecodeError:
+                    return_data = {}
+            else:
+                return_data = {}
 
+        summary = return_data.get("summary", "").strip()
+        language = return_data.get("language", "").strip()
+
+        if not summary:
+            summary = "Summary could not be extracted."
         return summary, language
 
     except Exception as error:
-        print(f"OpenAI API error (summary): {error}")
+        print(f"❌ OpenAI API error (summary): {error}")
         return "Summary could not be generated.", ""
 
 
@@ -92,25 +107,23 @@ def generate_flashcards_from_summary(ai_summary: str, language: str) -> list[dic
             - "answer" (str): The flashcard answer.
     """
     client = get_openai_client()
+
     try:
         prompt = (
             f"Based on the following summary, generate 3–5 educational flashcards. "
             f"Respond in the same language as the summary, which is {language}.\n\n"
             "Each flashcard should have a concise question and a clear, complete answer. "
             "Make sure the questions do NOT contain the answers. "
-            "Use all structured content from the summary (tables, bullet points, lists) to create targeted questions. "
-            "For example, if the summary contains a list of the 4 pillars of OOP, ask: "
-            "'What are the 4 pillars of OOP?'\n\n"
+            "Format the output like this exactly:\n"
+            "Question: ...\nAnswer: ...\n\n"
+            "Do NOT use markdown or bullet points. Only plain text.\n\n"
             f"Summary:\n{ai_summary}"
         )
 
-        messages: list[ChatCompletionSystemMessageParam | ChatCompletionUserMessageParam] = [
+        messages = [
             ChatCompletionSystemMessageParam(
                 role="system",
-                content=(
-                    "You are an educational assistant that creates clear flashcards "
-                    "to help users learn efficiently."
-                )
+                content="You are an educational assistant that creates clear flashcards to help users learn efficiently."
             ),
             ChatCompletionUserMessageParam(
                 role="user",
@@ -126,21 +139,23 @@ def generate_flashcards_from_summary(ai_summary: str, language: str) -> list[dic
         )
 
         content = response.choices[0].message.content.strip()
+        print("\n🔍 Raw flashcard output from OpenAI:\n", content)
 
         flashcards = []
-        for block in content.split("\n\n"):
-            lines = block.strip().split("\n")
-            if len(lines) == 2 and lines[0].startswith("Question:") and lines[1].startswith(
-                    "Answer:"):
-                flashcards.append({
-                    "question": lines[0].replace("Question:", "").strip(),
-                    "answer": lines[1].replace("Answer:", "").strip()
-                })
+        pattern = r"(?i)question[:\-–]\s*(.*?)\s*answer[:\-–]\s*(.*?)(?=\n{2,}|$)"
+        matches = re.findall(pattern, content, re.DOTALL)
 
+        for question, answer in matches:
+            flashcards.append({
+                "question": question.strip(),
+                "answer": answer.strip()
+            })
+
+        print("✅ Parsed flashcards:", flashcards)
         return flashcards
 
     except Exception as error:
-        print(f"OpenAI API error (flashcards): {error}")
+        print(f"❌ OpenAI API error (flashcards): {error}")
         return []
 
 def check_user_answer_with_llm(question: str, correct_answer: str, user_answer: str, language: str) -> dict:
@@ -168,6 +183,8 @@ def check_user_answer_with_llm(question: str, correct_answer: str, user_answer: 
             f"Correct Answer: {correct_answer}\n"
             f"User's Answer: {user_answer}\n\n"
             "Evaluate the user's answer. Clearly state whether it is correct, incorrect, or partially correct. "
+            "If the user's answer is just a repetition of the question or only an abbreviation without explanation, "
+            "consider it incorrect and explain why. "
             "Provide a short, helpful explanation. "
             f"Your response must be written in {language}."
         )

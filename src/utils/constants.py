@@ -59,6 +59,8 @@ class ErrorMessages:
     TITLE_CONTENT_REQUIRED = "Title and content are required for creating a note."
     TITLE_REQUIRED = "Title is required."
     EMPTY_NOTE_CONTENT = "Note content cannot be empty."
+    TITLE_TOO_LONG = "Title must not exceed 100 characters."
+    CONTENT_TOO_LONG = "Content must not exceed 1000 characters."
 
     NO_SUMMARY_AVAILABLE = "No summary available for this note."
     MISSING_ANSWER_FIELD = "Answer field is missing in the request."
