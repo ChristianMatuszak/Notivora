@@ -143,3 +143,49 @@ def test_access_foreign_note_denied(test_client, session, create_user):
 
     response = test_client.get(f'/note/get-note/{note.note_id}')
     assert response.status_code == 404
+
+def test_note_validation(login_auth_client):
+    """
+    Tests validation behavior when creating notes with invalid input data.
+
+    Sends multiple POST requests to the note creation endpoint using missing fields, empty strings,
+    and values that exceed defined maximum lengths (as configured in `config.py`).
+    Verifies that the API returns a 400 Bad Request and appropriate error messages.
+
+    Args:
+        login_auth_client (FlaskClient): Authenticated test client for making requests.
+    """
+
+    response = login_auth_client.post('/note/store-note', json={
+        "content": "Valid content"
+    })
+    assert response.status_code == 400
+    assert "title" in response.get_json().get("error", "").lower()
+
+    response = login_auth_client.post('/note/store-note', json={
+        "title": "Valid title"
+    })
+    assert response.status_code == 400
+    assert "content" in response.get_json().get("error", "").lower()
+
+    response = login_auth_client.post('/note/store-note', json={
+        "title": "",
+        "content": ""
+    })
+    assert response.status_code == 400
+    assert "title" in response.get_json().get("error", "").lower()
+
+    response = login_auth_client.post('/note/store-note', json={
+        "title": "T" * 101,
+        "content": "Valid content"
+    })
+    assert response.status_code == 400
+    assert "title" in response.get_json().get("error", "").lower()
+
+    response = login_auth_client.post('/note/store-note', json={
+        "title": "Valid title",
+        "content": "C" * 1001
+    })
+    assert response.status_code == 400
+    assert "content" in response.get_json().get("error", "").lower()
+

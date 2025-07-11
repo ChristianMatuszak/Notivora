@@ -2,6 +2,9 @@ import pytest
 
 from src.data.models import Flashcard
 from src.data.models.notes import Note
+from src.app.services.llm_service import LLMService
+from src.utils.constants import ErrorMessages
+from src.data.models.users import User
 from src.utils.llm_api import check_user_answer_with_llm
 
 
@@ -101,3 +104,55 @@ def test_check_answer(login_auth_client):
     print("Question:", question)
     print("User answer:", user_answer)
     print("Feedback:", feedback["evaluation"])
+
+def test_llm_service_error_handling(session, create_user):
+    """
+    Tests error handling in the LLMService methods.
+
+    Verifies that the service raises ValueErrors when attempting to operate on missing or invalid data,
+    such as non-existent notes, empty content, or missing input parameters.
+
+    Args:
+        session (Session): SQLAlchemy session for database access.
+        create_user (User): User who owns the notes.
+    """
+    service = LLMService(session)
+
+    with pytest.raises(ValueError) as exc1:
+        service.generate_summary(note_id=9999, user_id=create_user.id, generate_summary_from_note=lambda x: ("summary", "en"))
+    assert str(exc1.value) == ErrorMessages.NOTE_NOT_FOUND
+
+    empty_note = Note(title="Empty", original="", user_id=create_user.id)
+    session.add(empty_note)
+    session.commit()
+
+    with pytest.raises(ValueError) as exc2:
+        service.generate_summary(note_id=empty_note.note_id, user_id=create_user.id, generate_summary_from_note=lambda x: ("summary", "en"))
+    assert str(exc2.value) == ErrorMessages.EMPTY_NOTE_CONTENT
+
+    with pytest.raises(ValueError) as exc3:
+        service.generate_flashcards(note_id=9999, user_id=create_user.id, generate_flashcards_from_summary=lambda x, y: [], flashcard_service=None)
+    assert str(exc3.value) == ErrorMessages.NOTE_NOT_FOUND
+
+    no_summary_note = Note(title="No Summary", original="Real content", user_id=create_user.id)
+    session.add(no_summary_note)
+    session.commit()
+
+    with pytest.raises(ValueError) as exc4:
+        service.generate_flashcards(
+            note_id=no_summary_note.note_id,
+            user_id=create_user.id,
+            generate_flashcards_from_summary=lambda x, y: [],
+            flashcard_service=None
+        )
+    assert str(exc4.value) == ErrorMessages.NO_SUMMARY_AVAILABLE
+
+    with pytest.raises(ValueError) as exc5:
+        service.check_answer(
+            question="What is AI?",
+            correct_answer="Artificial Intelligence",
+            user_answer="",
+            language="en",
+            check_user_answer_with_llm=lambda q, c, u, l: {}
+        )
+    assert "Missing required fields" in str(exc5.value)
