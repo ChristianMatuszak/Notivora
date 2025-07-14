@@ -64,7 +64,6 @@ def generate_summary_from_note(note_content: str) -> Tuple[str, str]:
         )
 
         content = response.choices[0].message.content.strip()
-        print("🔍 Raw summary response:\n", content)
 
         try:
             return_data = json.loads(content)
@@ -139,7 +138,6 @@ def generate_flashcards_from_summary(ai_summary: str, language: str) -> list[dic
         )
 
         content = response.choices[0].message.content.strip()
-        print("\n🔍 Raw flashcard output from OpenAI:\n", content)
 
         flashcards = []
         pattern = r"(?i)question[:\-–]\s*(.*?)\s*answer[:\-–]\s*(.*?)(?=\n{2,}|$)"
@@ -151,7 +149,6 @@ def generate_flashcards_from_summary(ai_summary: str, language: str) -> list[dic
                 "answer": answer.strip()
             })
 
-        print("✅ Parsed flashcards:", flashcards)
         return flashcards
 
     except Exception as error:
