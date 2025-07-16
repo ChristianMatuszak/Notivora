@@ -72,17 +72,28 @@ The goal is to create an interactive, intelligent learning experience that evolv
   Here's a description of the required environment variables:
   
   ```env
-  # OpenAI API Key for Access to OpenAI Systems
+  # OpenAI
   OPENAI_API_KEY=your_openai_api_key_here
-  
-  # OpenAI API Base URL (Default: https://api.openai.com/v1)
   OPENAI_API_BASE=https://api.openai.com/v1
-  
-  # Secret Key for Flask Sessions
+    
+  # Flask / App
   SECRET_KEY=your_secret_key_here
-  
-  # Database URL (example: sqlite:///./app.sqlite)
+  APP_ENV=development
+    
+  # Database
   DATABASE_URL=your_database_url_here
+    
+  # Email (SMTP)
+  SMTP_SERVER=smtp.example.com
+  SMTP_PORT=587
+  SMTP_USERNAME=name
+  SMTP_PASSWORD=password
+  FROM_EMAIL=user@email.com
+    
+  # JWT / Auth
+  JWT_SECRET_KEY=your_jwt_secret_key
+  ALGORITHM=HS256
+  EXPIRES_MINUTES=30
   ```
   
   ```bash
@@ -114,6 +125,9 @@ The goal is to create an interactive, intelligent learning experience that evolv
    - `POST /llm/generate-flashcard/<note_id>` - Create flashcards
    - `POST /llm/check-answer` - Evaluate quiz answers
 
+   ### Quiz Features
+   - `POST /start/<note_id>` - Start quiz for a flashcard set
+   - `GET /progress/<note_id>` - Get quiz progress
 --- 
 
 ## 4. Project Structure
@@ -123,14 +137,24 @@ The goal is to create an interactive, intelligent learning experience that evolv
   ├── app/
   │   ├── __init__.py              # Flask App Factory
   │   ├── main.py                  # Main entry point
-  │   └── routes/                  # API routes
+  │   ├── routes/                  # API routes
   │       ├── user.py              # User management endpoints
   │       ├── note.py              # Note management endpoints
   │       ├── llm.py               # AI/LLM integration endpoints
+  │       ├── quiz.py              # Quiz endpoints
   │       └── ping.py              # Health check endpoint
+  │   └── services/                # Business logic
+  │       ├── flashcard_Service.py # Flashcard business logic
+  │       ├── note_service.py      # Note business logic
+  │       ├── llm_service.py       # AI/LLM business logic
+  │       ├── quiz_service.py      # Quiz business logic
+  │       └── user_service.py      # User busniess logic
+  ├── config/
+      └── config.py                # Configuration settings
   ├── data/
   │   ├── db.py                    # Database connection setup
   │   └── models/                  # SQLAlchemy models
+  │       ├── init.py              # Initialize models
   │       ├── users.py             # User model
   │       ├── notes.py             # Note model
   │       ├── flashcards.py        # Flashcard model
@@ -141,7 +165,7 @@ The goal is to create an interactive, intelligent learning experience that evolv
   │   ├── llm_api.py               # OpenAI API integration
   │   ├── email.py                 # Email functionality
   │   └── token.py                 # Token management
-  └── tests/                       # Test files
+  └── tests/                       # Test files from endpoints to workflow
   ```
 
 ---
